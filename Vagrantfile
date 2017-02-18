@@ -12,9 +12,9 @@ tbip = "#{network}.13"
 
 # modifiy hostnames if required
 nodes = [
-{hostname: "node1", ipaddress: "#{tbip}", type: "tb", box: "bento/centos-7.2", memory: "1024"},
-{hostname: 'node2', ipaddress: "#{secondmdmip}", type: 'mdm2', box: "bento/centos-7.2", memory: "1024"},
-{hostname: 'node3', ipaddress: "#{firstmdmip}", type: 'mdm1', box: "bento/centos-7.2", memory: "1024"},
+{hostname: "node1", ipaddress: "#{tbip}", type: "tb", box: "bento/centos-7.3", memory: "1024"},
+{hostname: 'node2', ipaddress: "#{secondmdmip}", type: 'mdm2', box: "bento/centos-7.3", memory: "1024"},
+{hostname: 'node3', ipaddress: "#{firstmdmip}", type: 'mdm1', box: "bento/centos-7.3", memory: "1024"},
 ]
 
 # 100GB fake device
@@ -29,7 +29,6 @@ Vagrant.configure("2") do |config|
   nodes.each do |node|
     config.vm.define node[:hostname] do |node_config|
       node_config.vm.box = "#{node[:box]}"
-	  node_config.ssh.insert_key = false # due to bug in Vagrant 1.8.5, will be removed once 1.8.6 is available
       node_config.vm.host_name = "#{node[:hostname]}.#{domain}"
       node_config.vm.provider :virtualbox do |vb|
         vb.customize ["modifyvm", :id, "--memory", "#{node[:memory]}"]

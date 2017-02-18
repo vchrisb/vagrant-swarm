@@ -47,43 +47,58 @@ echo PASSWORD    = "${PASSWORD}"
 #sudo tar -C /usr/local -xzf go1.7.linux-amd64.tar.gz
 #echo 'export PATH=$PATH:/usr/local/go/bin' > /etc/profile.d/path.sh
 
+# restart network as private network sometimes not yet available
+systemctl restart network
+
 # install rexray
 echo "#### Installing RexRay ####"
 curl -sSL https://dl.bintray.com/emccode/rexray/install | sh -
 cat > /etc/rexray/config.yml <<EOL
-rexray:
-  storageDrivers:
-  - ScaleIO
-  volume:
-    mount:
-      preempt: true
-ScaleIO:
-  endpoint: https://${FIRSTMDMIP}:8080/api
+libstorage:
+  service: scaleio
+scaleio:
+  endpoint: https://127.0.0.1:8443/api
   insecure: true
+  usecerts: true
   userName: admin
   password: Scaleio123
   systemName: Vagrant
   protectionDomainName: pd1
   storagePoolName: sp1
+  thinOrThick: ThinProvisioned
 EOL
 chmod 0664 /etc/rexray/config.yml
+
+## make rexray autorestart
+mkdir -p /etc/systemd/system/rexray.service.d
+cat > /etc/systemd/system/rexray.service.d/override.conf <<EOF
+[Service]
+Restart=always
+RestartSec=5
+EOF
+systemctl daemon-reload
 rexray start
 
 # install and start docker
 echo "#### Installing docker ####"
-curl -fsSL https://get.docker.com/ | sh
-service docker start
+sudo yum install -y yum-utils
+sudo yum-config-manager --add-repo https://docs.docker.com/engine/installation/linux/repo_files/centos/docker.repo
+sudo yum makecache fast 
+sudo yum -y install docker-engine
+sudo systemctl enable docker
+sudo systemctl start docker
+sudo gpasswd -a vagrant docker
 
 # install ScaleIO and configure Swarm
 case "$(uname -r)" in
   *el6*)
     sysctl -p kernel.shmmax=209715200
     yum install numactl libaio -y
-    cd /vagrant/scaleio/ScaleIO*/ScaleIO*RHEL6*
+    cd /vagrant/scaleio/ScaleIO*/ScaleIO*RHEL_OEL6*
     ;;
   *el7*)
     yum install numactl libaio -y
-    cd /vagrant/scaleio/ScaleIO*/ScaleIO*RHEL7*
+    cd /vagrant/scaleio/ScaleIO*/ScaleIO*RHEL_OEL7*
     ;;
 esac
 
@@ -128,26 +143,26 @@ case ${TYPE} in
 		scli --add_standby_mdm --new_mdm_ip ${TBIP} --mdm_role tb --new_mdm_name tb1
 		scli --switch_cluster_mode --cluster_mode 3_node --add_slave_mdm_name mdm2 --add_tb_name tb1
 		sleep 2
-		scli --mdm_ip ${FIRSTMDMIP},${SECONDMDMIP} --add_protection_domain --protection_domain_name pd1
-		scli --mdm_ip ${FIRSTMDMIP},${SECONDMDMIP} --add_storage_pool --protection_domain_name pd1 --storage_pool_name sp1
-		scli --mdm_ip ${FIRSTMDMIP},${SECONDMDMIP} --add_sds --sds_ip ${FIRSTMDMIP} --device_path ${DEVICE} --storage_pool_name sp1 --protection_domain_name pd1 --sds_name sds1
-		scli --mdm_ip ${FIRSTMDMIP},${SECONDMDMIP} --add_sds --sds_ip ${SECONDMDMIP} --device_path ${DEVICE} --storage_pool_name sp1 --protection_domain_name pd1 --sds_name sds2
-		scli --mdm_ip ${FIRSTMDMIP},${SECONDMDMIP} --add_sds --sds_ip ${TBIP} --device_path ${DEVICE} --storage_pool_name sp1 --protection_domain_name pd1 --sds_name sds3		
+		scli --mdm_ip ${FIRSTMDMIP},${SECONDMDMIP} --add_protection_domain --protection_domain_name pd1 --approve_certificate
+		scli --mdm_ip ${FIRSTMDMIP},${SECONDMDMIP} --add_storage_pool --protection_domain_name pd1 --storage_pool_name sp1 --approve_certificate
+		scli --mdm_ip ${FIRSTMDMIP},${SECONDMDMIP} --add_sds --sds_ip ${FIRSTMDMIP} --device_path ${DEVICE} --storage_pool_name sp1 --protection_domain_name pd1 --sds_name sds1 --approve_certificate
+		scli --mdm_ip ${FIRSTMDMIP},${SECONDMDMIP} --add_sds --sds_ip ${SECONDMDMIP} --device_path ${DEVICE} --storage_pool_name sp1 --protection_domain_name pd1 --sds_name sds2 --approve_certificate
+		scli --mdm_ip ${FIRSTMDMIP},${SECONDMDMIP} --add_sds --sds_ip ${TBIP} --device_path ${DEVICE} --storage_pool_name sp1 --protection_domain_name pd1 --sds_name sds3 --approve_certificate
 		sleep 2
-		scli --mdm_ip ${FIRSTMDMIP},${SECONDMDMIP} --query_all
+		scli --mdm_ip ${FIRSTMDMIP},${SECONDMDMIP} --query_all --approve_certificate
 		
 		echo "#### Joining docker swarm as manager ####"
 		MANAGER_TOKEN=`cat /vagrant/swarm_manager_token`
 		docker swarm join --listen-addr ${FIRSTMDMIP} --advertise-addr ${FIRSTMDMIP} --token=$MANAGER_TOKEN ${TBIP}
 		
 		echo "#### Starting ScaleIO Gateway on docker swarm ####"
-		docker service create --replicas 2 --name=scaleio-gw -p 8080:443 -e GW_PASSWORD=${PASSWORD} -e MDM1_IP_ADDRESS=${FIRSTMDMIP} -e MDM2_IP_ADDRESS=${SECONDMDMIP} -e TRUST_MDM_CRT=true vchrisb/scaleio-gw
+		docker service create --replicas 1 --name=scaleio-gw -p 8443:443 -e GW_PASSWORD=${PASSWORD} -e MDM1_IP_ADDRESS=${FIRSTMDMIP} -e MDM2_IP_ADDRESS=${SECONDMDMIP} -e TRUST_MDM_CRT=true vchrisb/scaleio-gw
 		
 		TIMEOUT=1200
 		TIMER=1
 		INTERVAL=30
 		echo "#### Wating for ScaleIO Gateway to become available (Timeout after ${TIMEOUT}s) ####"
-		while [[ $(curl --output /dev/null --head --silent --fail --insecure --write-out %{http_code} https://${FIRSTMDMIP}:8080) != 302 ]];
+		while [[ $(curl --output /dev/null --head --silent --fail --insecure --write-out %{http_code} https://${FIRSTMDMIP}:8443) != 302 ]];
 		do
 		  if [ $TIMER -gt $TIMEOUT ]; then
 			echo ""
