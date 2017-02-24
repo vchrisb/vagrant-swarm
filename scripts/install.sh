@@ -41,43 +41,8 @@ echo SECONDMDMIP    = "${SECONDMDMIP}"
 echo TBIP    = "${TBIP}"
 echo PASSWORD    = "${PASSWORD}"
 
-# install golang
-#cd /tmp
-#wget -N -nv https://storage.googleapis.com/golang/go1.7.linux-amd64.tar.gz
-#sudo tar -C /usr/local -xzf go1.7.linux-amd64.tar.gz
-#echo 'export PATH=$PATH:/usr/local/go/bin' > /etc/profile.d/path.sh
-
 # restart network as private network sometimes not yet available
 systemctl restart network
-
-# install rexray
-echo "#### Installing RexRay ####"
-curl -sSL https://dl.bintray.com/emccode/rexray/install | sh -
-cat > /etc/rexray/config.yml <<EOL
-libstorage:
-  service: scaleio
-scaleio:
-  endpoint: https://127.0.0.1:8443/api
-  insecure: true
-  usecerts: true
-  userName: admin
-  password: Scaleio123
-  systemName: Vagrant
-  protectionDomainName: pd1
-  storagePoolName: sp1
-  thinOrThick: ThinProvisioned
-EOL
-chmod 0664 /etc/rexray/config.yml
-
-## make rexray autorestart
-mkdir -p /etc/systemd/system/rexray.service.d
-cat > /etc/systemd/system/rexray.service.d/override.conf <<EOF
-[Service]
-Restart=always
-RestartSec=5
-EOF
-systemctl daemon-reload
-rexray start
 
 # install and start docker
 echo "#### Installing docker ####"
@@ -109,6 +74,20 @@ if  [[ "tb mdm1 mdm2" = *${TYPE}* ]]; then
     MDM_IP=${FIRSTMDMIP},${SECONDMDMIP} rpm -Uv EMC-ScaleIO-sdc-*.x86_64.rpm
     TOKEN=${PASSWORD} rpm -Uv EMC-ScaleIO-lia-*.x86_64.rpm
 fi
+
+# install rexray
+docker plugin install rexray/scaleio:0.8.0-rc2 --alias scaleio --grant-all-permissions \
+  REXRAY_FSTYPE=xfs \
+  REXRAY_LOGLEVEL=warn \
+  REXRAY_PREEMPT=true \
+  SCALEIO_ENDPOINT=https://127.0.0.1:8443/api \
+  SCALEIO_INSECURE=true \
+  SCALEIO_USERNAME=admin \
+  SCALEIO_PASSWORD=${PASSWORD} \
+  SCALEIO_SYSTEMNAME=Vagrant \
+  SCALEIO_PROTECTIONDOMAINNAME=pd1 \
+  SCALEIO_STORAGEPOOLNAME=sp1 \
+  SCALEIO_THINORTHICK=ThinProvisioned
 
 case ${TYPE} in
 	"tb")
@@ -156,12 +135,12 @@ case ${TYPE} in
 		docker swarm join --listen-addr ${FIRSTMDMIP} --advertise-addr ${FIRSTMDMIP} --token=$MANAGER_TOKEN ${TBIP}
 		
 		echo "#### Starting ScaleIO Gateway on docker swarm ####"
-		docker service create --replicas 1 --name=scaleio-gw -p 8443:443 -e GW_PASSWORD=${PASSWORD} -e MDM1_IP_ADDRESS=${FIRSTMDMIP} -e MDM2_IP_ADDRESS=${SECONDMDMIP} -e TRUST_MDM_CRT=true vchrisb/scaleio-gw
+		docker service create --replicas 2 --name=scaleio-gw -p 8443:443 -e GW_PASSWORD=${PASSWORD} -e MDM1_IP_ADDRESS=${FIRSTMDMIP} -e MDM2_IP_ADDRESS=${SECONDMDMIP} -e TRUST_MDM_CRT=true vchrisb/scaleio-gw
 		
 		TIMEOUT=1200
 		TIMER=1
 		INTERVAL=30
-		echo "#### Wating for ScaleIO Gateway to become available (Timeout after ${TIMEOUT}s) ####"
+		echo "#### Wating for ScaleIO Gateway being downloaded and becoming available (Timeout after ${TIMEOUT}s) ####"
 		while [[ $(curl --output /dev/null --head --silent --fail --insecure --write-out %{http_code} https://${FIRSTMDMIP}:8443) != 302 ]];
 		do
 		  if [ $TIMER -gt $TIMEOUT ]; then
@@ -176,8 +155,6 @@ case ${TYPE} in
 		done
 		echo ""
 		echo "Docker Swarm with persistent storage using ScaleIO and RexRay successfully deployed!"
-		echo "Follwing example does start a Mariadb Server using persistent storage:"
-		echo "sudo docker service create --name mariadb --mount type=volume,volume-driver=rexray,source="mariadb",target=/var/lib/mysql -e MYSQL_ROOT_PASSWORD=test mariadb"
 		echo ""
 		;;
 esac
