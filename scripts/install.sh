@@ -76,7 +76,7 @@ if  [[ "tb mdm1 mdm2" = *${TYPE}* ]]; then
 fi
 
 # install rexray
-docker plugin install rexray/scaleio:0.8.0-rc2 --alias scaleio --grant-all-permissions \
+docker plugin install rexray/scaleio --alias scaleio --grant-all-permissions \
   REXRAY_FSTYPE=xfs \
   REXRAY_LOGLEVEL=warn \
   REXRAY_PREEMPT=true \
