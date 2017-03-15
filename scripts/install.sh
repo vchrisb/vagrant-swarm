@@ -47,9 +47,9 @@ systemctl restart network
 # install and start docker
 echo "#### Installing docker ####"
 sudo yum install -y yum-utils
-sudo yum-config-manager --add-repo https://docs.docker.com/engine/installation/linux/repo_files/centos/docker.repo
-sudo yum makecache fast 
-sudo yum -y install docker-engine
+sudo yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
+sudo yum makecache fast
+sudo yum -y install docker-ce
 sudo systemctl enable docker
 sudo systemctl start docker
 sudo gpasswd -a vagrant docker
@@ -101,7 +101,7 @@ case ${TYPE} in
 	"mdm2")
 		echo "#### Installing ScaleIO MDM ####"
 		MDM_ROLE_IS_MANAGER=1 rpm -Uv EMC-ScaleIO-mdm-*.x86_64.rpm
-		
+
 		echo "#### Joining docker swarm as manager ####"
 		MANAGER_TOKEN=`cat /vagrant/swarm_manager_token`
 		docker swarm join --listen-addr ${SECONDMDMIP} --advertise-addr ${SECONDMDMIP} --token=$MANAGER_TOKEN ${TBIP}
@@ -110,7 +110,7 @@ case ${TYPE} in
 	"mdm1")
 		echo "#### Installing ScaleIO MDM ####"
 		MDM_ROLE_IS_MANAGER=1 rpm -Uv EMC-ScaleIO-mdm-*.x86_64.rpm
-		
+
 		echo "#### Creating and configuring ScaleIO Cluster ####"
 		scli --create_mdm_cluster --master_mdm_ip ${FIRSTMDMIP} --master_mdm_management_ip ${FIRSTMDMIP} --master_mdm_name mdm1 --accept_license --approve_certificate
 		sleep 5
@@ -129,14 +129,14 @@ case ${TYPE} in
 		scli --mdm_ip ${FIRSTMDMIP},${SECONDMDMIP} --add_sds --sds_ip ${TBIP} --device_path ${DEVICE} --storage_pool_name sp1 --protection_domain_name pd1 --sds_name sds3 --approve_certificate
 		sleep 2
 		scli --mdm_ip ${FIRSTMDMIP},${SECONDMDMIP} --query_all --approve_certificate
-		
+
 		echo "#### Joining docker swarm as manager ####"
 		MANAGER_TOKEN=`cat /vagrant/swarm_manager_token`
 		docker swarm join --listen-addr ${FIRSTMDMIP} --advertise-addr ${FIRSTMDMIP} --token=$MANAGER_TOKEN ${TBIP}
-		
+
 		echo "#### Starting ScaleIO Gateway on docker swarm ####"
 		docker service create --replicas 2 --name=scaleio-gw -p 8443:443 -e GW_PASSWORD=${PASSWORD} -e MDM1_IP_ADDRESS=${FIRSTMDMIP} -e MDM2_IP_ADDRESS=${SECONDMDMIP} -e TRUST_MDM_CRT=true vchrisb/scaleio-gw
-		
+
 		TIMEOUT=1200
 		TIMER=1
 		INTERVAL=30
