@@ -58,11 +58,11 @@ sudo gpasswd -a vagrant docker
 case "$(uname -r)" in
   *el6*)
     sysctl -p kernel.shmmax=209715200
-    yum install numactl libaio -y
+    yum install numactl libaio bash-completion -y
     cd /vagrant/scaleio/ScaleIO*/ScaleIO*RHEL_OEL6*
     ;;
   *el7*)
-    yum install numactl libaio -y
+    yum install numactl libaio bash-completion -y
     cd /vagrant/scaleio/ScaleIO*/ScaleIO*RHEL_OEL7*
     ;;
 esac
